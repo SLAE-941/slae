@@ -1,5 +1,6 @@
 from __future__ import print_function
 import random
+import struct
 
 def generate_shellcode(shellcode, avoid_values, seed_key, prefix = "", suffix = ""):
     encoded_shellcode = ""
@@ -7,6 +8,16 @@ def generate_shellcode(shellcode, avoid_values, seed_key, prefix = "", suffix = 
     for char in shellcode:
         encoded_shellcode += chr(ord(char) ^ xor_key) + generate_char(avoid_values)
         xor_key = (ord(char) ^ xor_key)
+    if suffix:
+        encoded_shellcode = encoded_shellcode + chr(ord(suffix) ^ xor_key)
+    return (chr(seed_key) + encoded_shellcode)
+
+def generate_shellcode2(shellcode, avoid_values, seed_key, prefix = "", suffix = ""):
+    encoded_shellcode = ""
+    xor_key = seed_key
+    for char in shellcode:
+        encoded_shellcode += chr(ord(char) ^ xor_key) + generate_char(avoid_values)
+        xor_key = (xor_key + (ord(char))) & 0xFF
     if suffix:
         encoded_shellcode = encoded_shellcode + chr(ord(suffix) ^ xor_key)
     return (chr(seed_key) + encoded_shellcode)
@@ -42,7 +53,7 @@ if __name__ == "__main__":
 
     while(not shellcode_ok):
         seed = random.randint(1,255)
-        encoded_shellcode = generate_shellcode(shellcode, avoid_values, seed, prefix=chr(seed), suffix="\xff")
+        encoded_shellcode = generate_shellcode2(shellcode, avoid_values, seed, prefix=chr(seed), suffix="\xff")
         shellcode_ok = check_shellcode(encoded_shellcode, avoid_values)
     print("Before encoding:")
     print_shellcode(shellcode)

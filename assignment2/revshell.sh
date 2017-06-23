@@ -41,7 +41,7 @@ elif [[ $2 -gt 255 ]] && [[ $2 -lt 65536 ]]; then
                 echo "Port contains nulls, requires encoding"
                 exit 1
         fi
-        port=`echo "\x66\x86\x${v:0:2}\x${v:2:2}" | tr '[:upper:]' '[:lower:]'`
+        port=`echo "\x66\x68\x${v:0:2}\x${v:2:2}" | tr '[:upper:]' '[:lower:]'`
 else
         echo "Invalid port specified."
         exit 1

